@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Block Domains",
+  "version": "1.0.0",
+  "description": "Blocks all network requests (XHR, fetch, scripts, images, etc.) to a configurable set of domains.",
+  "permissions": ["declarativeNetRequest"],
+  "host_permissions": ["<all_urls>"],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "blocked_domains",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}
