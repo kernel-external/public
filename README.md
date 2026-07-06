@@ -12,4 +12,5 @@ see the [docs](https://docs.onkernel.com) for the full API reference.
 | Sample | Description |
 |--------|-------------|
 | [session-usage-export](session-usage-export) | Export your past browser sessions to CSV with an estimated usage cost per session. Useful for reconciling a bill or breaking usage down by time period. |
+| [session-replay-telemetry-srt](session-replay-telemetry-srt) | Generate `.srt` subtitle files for every replay under a browser session by correlating replay timestamps with captured browser telemetry events. |
 | [block-domains-extension](block-domains-extension) | Minimal Manifest V3 Chrome extension that blocks all network requests (XHR/fetch, scripts, frames, etc.) to a configurable set of domains via `declarativeNetRequest`. |
