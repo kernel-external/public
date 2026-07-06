@@ -4,3 +4,4 @@ dist/
 
 # Generated exports
 sessions_*.csv
+session-replay-telemetry-srt/srt/
