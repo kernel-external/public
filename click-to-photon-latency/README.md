@@ -56,6 +56,36 @@ npx tsx index.ts --clicks 200 --json out.json
 | `--headless` | off | Run the local probe browser headless (rendering may throttle; headed is more representative) |
 | `--gpu` | off | Create a GPU-accelerated Kernel browser, e.g. to compare CPU vs GPU image latency (requires a plan with GPU access) |
 
+## Run as a Kernel app (no laptop in the loop)
+
+[app.ts](app.ts) packages the same probe as a deployable
+[Kernel app](https://docs.onkernel.com/apps/develop): the action creates a
+*target* browser (kiosk + sentinel) **and a probe browser that plays the
+user**, so the whole measurement runs inside Kernel. Attach a proxy to the
+probe browser to emulate users in different locales.
+
+```bash
+kernel deploy app.ts
+kernel invoke click-to-photon probe --payload '{"clicks": 100}'
+
+# Emulate a user in another locale via a proxy on the probe browser
+kernel invoke click-to-photon probe --payload '{"clicks": 100, "proxy_id": "<proxy id>"}'
+```
+
+Payload fields: `clicks`, `warmup`, `click_timeout_ms`, `settle_ms`, `gpu`
+(target browser image), `proxy_id` (probe browser egress),
+`force_proxied_webrtc`, `keep`. The invocation output contains the same
+summary + raw samples as `--json`.
+
+**Proxy caveat:** Chrome routes websockets through HTTP proxies but sends
+WebRTC media over direct UDP by default — a proxied probe would silently
+measure the unproxied media path. When `proxy_id` is set, the app therefore
+defaults the probe browser to the Chrome policy
+`WebRtcIPHandling: disable_non_proxied_udp`, forcing media through the proxy
+(TURN over TCP). Pass `force_proxied_webrtc: false` to opt out. Note the
+no-proxy configuration measures Kernel-datacenter-to-Kernel-datacenter
+latency — a lower bound, not a real user's experience.
+
 ## Example output
 
 ```
