@@ -54,6 +54,7 @@ npx tsx index.ts --clicks 200 --json out.json
 | `--json <path>` | — | Also write full results (per-click samples included) as JSON |
 | `--keep` | off | Don't delete the Kernel session when done |
 | `--headless` | off | Run the local probe browser headless (rendering may throttle; headed is more representative) |
+| `--gpu` | off | Create a GPU-accelerated Kernel browser, e.g. to compare CPU vs GPU image latency (requires a plan with GPU access) |
 
 ## Example output
 

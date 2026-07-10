@@ -34,6 +34,7 @@ interface CliArgs {
   jsonPath?: string;
   keep: boolean;
   headless: boolean;
+  gpu: boolean;
 }
 
 const USAGE = `Usage: npx tsx index.ts [options]
@@ -46,6 +47,7 @@ Options:
   --json <path>         Also write full results as JSON
   --keep                Don't delete the Kernel session when done
   --headless            Run the local probe browser headless (rendering may throttle)
+  --gpu                 Create a GPU-accelerated Kernel browser (requires a plan with GPU access)
   --help                Show this help`;
 
 function parseArgs(argv: string[]): CliArgs {
@@ -56,6 +58,7 @@ function parseArgs(argv: string[]): CliArgs {
     settleMs: 200,
     keep: false,
     headless: false,
+    gpu: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const next = () => {
@@ -84,6 +87,9 @@ function parseArgs(argv: string[]): CliArgs {
         break;
       case "--headless":
         args.headless = true;
+        break;
+      case "--gpu":
+        args.gpu = true;
         break;
       case "--help":
         console.log(USAGE);
@@ -502,7 +508,7 @@ function report(raw: ProbeRaw, args: CliArgs, sessionId: string, metroOrigin: st
 
 // --- orchestration ------------------------------------------------------------
 
-async function waitForLiveView(url: string, timeoutMs = 20000): Promise<void> {
+async function waitForLiveView(url: string, timeoutMs = 60000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let last = "";
   while (Date.now() < deadline) {
@@ -543,10 +549,10 @@ async function main(): Promise<void> {
   }
   const kernel = new Kernel();
 
-  console.log("Creating headful Kernel browser session...");
+  console.log(`Creating headful${args.gpu ? " GPU" : ""} Kernel browser session...`);
   // kiosk_mode hides the address bar and tabs so the sentinel page fills the
   // entire captured screen.
-  const session = await kernel.browsers.create({ timeout_seconds: 300, kiosk_mode: true });
+  const session = await kernel.browsers.create({ timeout_seconds: 300, kiosk_mode: true, gpu: args.gpu });
   console.log(`  session ${session.session_id}`);
   console.log(`  live view: ${session.browser_live_view_url}`);
 
