@@ -123,6 +123,7 @@ function report(raw: ProbeRaw, args: CliArgs, sessionId: string, metroOrigin: st
       `freezes ${rtc.freezeCount ?? "?"} (${fmt(rtc.totalFreezesDurationMs)})`,
   );
   console.log(`Connection: signaling open ${fmt(raw.wsOpenMs)}, first frame ${fmt(raw.firstFrameMs)} after probe start`);
+  if (raw.aborted) console.log(`NOTE: run ended early — ${raw.aborted}`);
 
   if (args.jsonPath) {
     writeFileSync(

@@ -84,7 +84,16 @@ app.action("probe", async (ctx: KernelContext, payload?: ProbePayload) => {
     // requests initiated from the initial about:blank page. The jwt-less live
     // path returns a plain 400 page on the same origin as the signaling ws.
     const liveOrigin = new URL(target.browser_live_view_url!).origin;
-    await proberPage.goto(`${liveOrigin}/browser/live`, { waitUntil: "domcontentloaded" });
+    await proberPage.goto(`${liveOrigin}/browser/live`, { waitUntil: "domcontentloaded" }).catch((err) => {
+      if (payload?.proxy_id && String(err).includes("ERR_TUNNEL_CONNECTION_FAILED")) {
+        throw new Error(
+          `the proxy refused to tunnel to ${liveOrigin} (most proxies only allow CONNECT to :80/:443). ` +
+            `Create the proxy with bypass_hosts: ["*.onkernel.com", "*.kernel.sh"] — signaling then goes direct ` +
+            `while WebRTC media still relays through the proxy via TURN on :443.`,
+        );
+      }
+      throw err;
+    });
     await proberPage.exposeFunction("probeLog", (message: string) => console.log(`[probe] ${message}`));
     // Bundlers (esbuild) inject __name helper calls into transpiled functions,
     // which breaks when Playwright serializes probeInPage into the page.

@@ -43,6 +43,7 @@ export interface ProbeRaw {
   firstFrameMs: number | null;
   framesSeen: number;
   probeDurationMs: number;
+  aborted: string | null;
   rtc: Record<string, unknown>;
 }
 
@@ -205,8 +206,13 @@ export async function probeInPage(cfg: ProbeConfig): Promise<ProbeRaw> {
       const { event, ...payload } = JSON.parse(e.data);
       if (event === "signal/provide") {
         pc = payload.lite ? new RTCPeerConnection() : new RTCPeerConnection({ iceServers: payload.ice });
+        pc.oniceconnectionstatechange = () => log(`ice connection: ${pc!.iceConnectionState}`);
+        pc.onicegatheringstatechange = () => log(`ice gathering: ${pc!.iceGatheringState}`);
         pc.onicecandidate = (ev) => {
-          if (ev.candidate) wsSend("signal/candidate", { data: JSON.stringify(ev.candidate.toJSON()) });
+          if (!ev.candidate) return;
+          const type = /typ (\w+)/.exec(ev.candidate.candidate)?.[1] ?? "?";
+          log(`local candidate: ${type} ${ev.candidate.protocol ?? ""}`);
+          wsSend("signal/candidate", { data: JSON.stringify(ev.candidate.toJSON()) });
         };
         pc.ontrack = (ev) => {
           if (ev.track.kind === "video") video.srcObject = ev.streams[0] ?? new MediaStream([ev.track]);
@@ -248,7 +254,25 @@ export async function probeInPage(cfg: ProbeConfig): Promise<ProbeRaw> {
     ]);
 
   try {
-    await withConnectTimeout(dcOpen.promise, "the neko data channel to open");
+    try {
+      await withConnectTimeout(dcOpen.promise, "the neko data channel to open");
+    } catch (err) {
+      // Enrich connection failures with ICE detail — the usual culprits are
+      // blocked UDP, a proxy that won't tunnel TURN, or no reachable relay.
+      const peer = pc as RTCPeerConnection | null;
+      if (peer) {
+        const gathered: string[] = [];
+        const report = await peer.getStats().catch(() => null);
+        report?.forEach((s: any) => {
+          if (s.type === "local-candidate") gathered.push(`${s.candidateType}/${s.protocol}${s.relayProtocol ? `(${s.relayProtocol})` : ""}`);
+        });
+        throw new Error(
+          `${err instanceof Error ? err.message : err} — ice connection: ${peer.iceConnectionState}, ` +
+            `gathering: ${peer.iceGatheringState}, local candidates: [${gathered.join(", ") || "none"}]`,
+        );
+      }
+      throw err;
+    }
     log(`data channel open at +${(performance.now() - tStart).toFixed(0)}ms`);
     wsSend("screen/resolution"); // request it in case the unprompted broadcast raced past us
     await withConnectTimeout(gotResolution.promise, "screen/resolution");
@@ -295,6 +319,8 @@ export async function probeInPage(cfg: ProbeConfig): Promise<ProbeRaw> {
     const warmupMs: number[] = [];
     const measuredMs: number[] = [];
     let drops = 0;
+    let consecutiveDrops = 0;
+    let aborted: string | null = null;
     const probeStart = performance.now();
 
     for (let i = 0; i < totalTrials; i++) {
@@ -310,15 +336,26 @@ export async function probeInPage(cfg: ProbeConfig): Promise<ProbeRaw> {
       const frame = await detection;
       if (frame === null) {
         drops++;
+        consecutiveDrops++;
         log(`trial ${i + 1}/${totalTrials}: no flip within ${cfg.clickTimeoutMs}ms (drop)`);
         if (i === 2 && drops === 3) {
           throw new Error(
             "first 3 clicks produced no visible change — input may not be reaching the page, or the sentinel is not on screen",
           );
         }
+        // A dead connection (e.g. a rotating proxy exit changed mid-run)
+        // never recovers here — return what we have instead of burning the
+        // per-click timeout on every remaining trial.
+        const iceState = (pc as RTCPeerConnection | null)?.iceConnectionState;
+        if (consecutiveDrops >= 2 && iceState && iceState !== "connected" && iceState !== "completed") {
+          aborted = `connection lost mid-run (ice ${iceState}) after ${warmupMs.length + measuredMs.length} successful trials`;
+          log(aborted);
+          break;
+        }
         const current = await waitForFrame((f) => f.luma !== null, 2000);
         if (current) stateWhite = current.luma! >= 128; // resync in case the flip landed after the timeout
       } else {
+        consecutiveDrops = 0;
         const ms = frame.displayTime - t0;
         (i < cfg.warmup ? warmupMs : measuredMs).push(ms);
         stateWhite = target;
@@ -370,6 +407,7 @@ export async function probeInPage(cfg: ProbeConfig): Promise<ProbeRaw> {
       firstFrameMs: firstFrameAt !== null ? firstFrameAt - tStart : null,
       framesSeen,
       probeDurationMs,
+      aborted,
       rtc,
     };
   } finally {
