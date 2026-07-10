@@ -56,6 +56,61 @@ npx tsx index.ts --clicks 200 --json out.json
 | `--headless` | off | Run the local probe browser headless (rendering may throttle; headed is more representative) |
 | `--gpu` | off | Create a GPU-accelerated Kernel browser, e.g. to compare CPU vs GPU image latency (requires a plan with GPU access) |
 
+## Run as a Kernel app (no laptop in the loop)
+
+[app.ts](app.ts) packages the same probe as a deployable
+[Kernel app](https://docs.onkernel.com/apps/develop): the action creates a
+*target* browser (kiosk + sentinel) **and a probe browser that plays the
+user**, so the whole measurement runs inside Kernel. Attach a proxy to the
+probe browser to emulate users in different locales.
+
+```bash
+kernel deploy app.ts
+kernel invoke click-to-photon probe --payload '{"clicks": 100}'
+
+# Emulate a user in another locale via a proxy on the probe browser
+kernel invoke click-to-photon probe --payload '{"clicks": 100, "proxy_id": "<proxy id>"}'
+```
+
+Create the locale proxy with `bypass_hosts` for Kernel's own hosts — most
+proxies only tunnel to ports 80/443, and the live view signaling endpoint is
+on :8443. Signaling then goes direct (it carries no latency-sensitive
+traffic), while the WebRTC media — the input and video whose round trip is
+being measured — still relays through the proxy via TURN on :443:
+
+```typescript
+const proxy = await kernel.proxies.create({
+  type: "datacenter", // or "residential" / "isp" for realistic last-mile paths
+  name: "c2p-probe-gb",
+  config: { country: "GB" },
+  bypass_hosts: ["*.onkernel.com", "*.kernel.sh"],
+});
+```
+
+Payload fields: `clicks`, `warmup`, `click_timeout_ms`, `settle_ms`, `gpu`
+(target browser image), `proxy_id` (probe browser egress),
+`force_proxied_webrtc`, `keep`. The invocation output contains the same
+summary + raw samples as `--json`.
+
+**Proxy caveats:**
+
+- Chrome routes websockets through HTTP proxies but sends WebRTC media over
+  direct UDP by default — a proxied probe would silently measure the
+  unproxied media path. When `proxy_id` is set, the app therefore defaults
+  the probe browser to the Chrome policy
+  `WebRtcIPHandling: disable_non_proxied_udp`, forcing media through the
+  proxy (TURN relayed over the tunnel). Pass `force_proxied_webrtc: false`
+  to opt out.
+- Use `residential` or `isp` proxies. Shared `datacenter` proxies enforce a
+  domain allowlist and refuse to tunnel to the TURN relay, so ICE never
+  gathers a relay candidate.
+- Residential exits rotate; if the exit changes mid-run the WebRTC
+  connection dies — the probe aborts early and returns the clicks measured
+  so far (`raw.aborted` says why). For long runs prefer `isp` proxies,
+  which keep a static exit IP.
+- The no-proxy configuration measures Kernel-datacenter-to-Kernel-datacenter
+  latency — a lower bound, not a real user's experience.
+
 ## Example output
 
 ```
