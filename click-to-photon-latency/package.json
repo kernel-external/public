@@ -1,0 +1,19 @@
+{
+  "name": "click-to-photon-latency",
+  "version": "1.0.0",
+  "description": "Measure the end-to-end input latency a user feels in Kernel live view with a standalone WebRTC click-to-photon probe.",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@onkernel/sdk": "^0.76.0",
+    "playwright": "^1.61.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.4",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.3"
+  }
+}
