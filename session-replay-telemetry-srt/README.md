@@ -2,6 +2,10 @@
 
 TypeScript CLI that turns Kernel browser telemetry into `.srt` subtitle files for every replay under a browser session. For each replay, it uses the replay's UTC `started_at` / `finished_at` timestamps, fetches telemetry from the same window, and writes subtitle cues relative to that replay video's start time.
 
+![Session replay with telemetry subtitles burned in](assets/replay-with-telemetry.gif)
+
+*A downloaded replay with the generated telemetry subtitles burned in — `network`, `page`, and `console` events captioned in sync with the video.*
+
 ## Setup
 
 ```bash
@@ -25,6 +29,15 @@ npx tsx index.ts <browser-session-id> \
 ```
 
 By default, the CLI writes files to `./srt/` named `replay-<replay-id>.srt` and includes `console`, `network`, `page`, `control`, `connection`, `system`, and `captcha` telemetry categories.
+
+### Burning subtitles into the replay video
+
+Any player that supports SRT sidecar files (VLC, IINA, mpv) can load the subtitles next to the downloaded replay. To burn them into the video itself:
+
+```bash
+kernel browsers replays download <session-id> <replay-id> -f replay.mp4
+ffmpeg -i replay.mp4 -vf "subtitles=srt/replay-<replay-id>.srt" replay-subtitled.mp4
+```
 
 ## Notes
 
