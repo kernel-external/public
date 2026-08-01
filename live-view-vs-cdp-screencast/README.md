@@ -2,22 +2,22 @@
 
 > **Because You Asked About the Line Between Headful and Headless**
 >
-> Two panes were filling, pixel after pixel,<br>
-> that while you watched turned into the same screen,<br>
-> riding a gradient invisible<br>
-> from lit and looked-at to the cold unseen.
+> Live views were loading in a silent window<br>
+> That while you watched Page.navigate dot-coms<br>
+> Rend'ring a gradient invisible<br>
+> From chrome and cursor to captchas, divs, and DOMs.
 >
-> There came a moment that you couldn't tell.<br>
-> And then one clearly dreamed the room as well.
+> There came a moment that your patience flagged.<br>
+> And then one clearly clicked instead of lagged.
 
-*After Howard Nemerov's "Because You Asked about the Line Between Prose and Poetry,"
-from which two lines are borrowed nearly whole.*
+*After Howard Nemerov's "Because You Asked about the Line Between Prose and Poetry."*
 
-The last line is literally true. A headless browser reports an `outerHeight` of 570
-against an `innerHeight` of 513 — it budgets 57px of window chrome and 30px of desktop
-panel that exist nowhere. It doesn't just render the page unseen; it renders the room it
-isn't in. That quirk is the whole reason [matching the two
-viewports](#matching-the-two-viewports) takes any work at all.
+The two panes really are hard to tell apart, and the reason is that a headless browser
+runs the whole pipeline — DOM, layout, paint — and skips only the last step, where pixels
+reach a screen. It even reports an `outerHeight` of 570 against an `innerHeight` of 513,
+budgeting 57px of window chrome and 30px of desktop panel that exist nowhere. It doesn't
+just render the page unseen; it renders the room it isn't in. That quirk is the whole
+reason [matching the two viewports](#matching-the-two-viewports) takes any work at all.
 
 ---
 
