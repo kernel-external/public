@@ -1,6 +1,6 @@
 # Live view vs. CDP screencast, side by side
 
-> **Because You Asked About the Line Between Headful and Headless**
+> **Because you asked about the line between headful and headless**
 >
 > Live views were loading in a silent window<br>
 > That while you watched Page.navigate dot-coms<br>
