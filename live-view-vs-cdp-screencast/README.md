@@ -1,5 +1,26 @@
 # Live view vs. CDP screencast, side by side
 
+> **Because You Asked About the Line Between Headful and Headless**
+>
+> Two panes were filling, pixel after pixel,<br>
+> that while you watched turned into the same screen,<br>
+> riding a gradient invisible<br>
+> from lit and looked-at to the cold unseen.
+>
+> There came a moment that you couldn't tell.<br>
+> And then one clearly dreamed the room as well.
+
+*After Howard Nemerov's "Because You Asked about the Line Between Prose and Poetry,"
+from which two lines are borrowed nearly whole.*
+
+The last line is literally true. A headless browser reports an `outerHeight` of 570
+against an `innerHeight` of 513 — it budgets 57px of window chrome and 30px of desktop
+panel that exist nowhere. It doesn't just render the page unseen; it renders the room it
+isn't in. That quirk is the whole reason [matching the two
+viewports](#matching-the-two-viewports) takes any work at all.
+
+---
+
 Renders two Kernel browsers next to each other in one page so you can compare the two
 ways of watching a browser:
 
