@@ -1,0 +1,11 @@
+{
+  "name": "live-view-vs-cdp-screencast",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@onkernel/sdk": "^0.72.0"
+  }
+}

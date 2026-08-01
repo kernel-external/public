@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kernel live view vs. CDP screencast</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #0b0b0d;
+        color: #e6e6e6;
+        font: 14px/1.4 ui-sans-serif, -apple-system, system-ui, sans-serif;
+      }
+      header {
+        display: flex; gap: 8px; align-items: center;
+        padding: 10px 14px; border-bottom: 1px solid #26262b;
+      }
+      header input {
+        flex: 1; min-width: 0; padding: 7px 10px;
+        background: #17171b; border: 1px solid #33333a; border-radius: 6px; color: inherit;
+        font: inherit;
+      }
+      header button {
+        padding: 7px 14px; border-radius: 6px; border: 1px solid #33333a;
+        background: #22222a; color: inherit; font: inherit; cursor: pointer;
+      }
+      header button:hover { background: #2c2c36; }
+      header button:disabled { opacity: .5; cursor: default; }
+      .grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px;
+      }
+      @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+      .pane {
+        border: 1px solid #26262b; border-radius: 10px; overflow: hidden; background: #121216;
+        display: flex; flex-direction: column;
+      }
+      .pane h2 {
+        margin: 0; padding: 9px 12px; font-size: 13px; font-weight: 600;
+        border-bottom: 1px solid #26262b; display: flex; justify-content: space-between; gap: 10px;
+      }
+      .tag { font-weight: 400; color: #8b8b96; font-family: ui-monospace, monospace; font-size: 11px; }
+      .stage {
+        position: relative; aspect-ratio: 16 / 10; background: #000;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .stage > iframe, .stage > canvas {
+        width: 100%; height: 100%; border: 0; display: block; object-fit: contain;
+      }
+      .stats {
+        display: flex; flex-wrap: wrap; gap: 14px;
+        padding: 8px 12px; border-top: 1px solid #26262b;
+        font-family: ui-monospace, monospace; font-size: 11px; color: #8b8b96;
+      }
+      .stats b { color: #e6e6e6; font-weight: 600; }
+      .note { padding: 0 14px 18px; color: #8b8b96; font-size: 12px; max-width: 900px; }
+      .note code { color: #c9c9d4; }
+      #status { font-family: ui-monospace, monospace; font-size: 11px; color: #8b8b96; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <input id="url" placeholder="https://..." />
+      <button id="go">Navigate both</button>
+      <span id="status">booting…</span>
+    </header>
+
+    <div class="grid">
+      <section class="pane">
+        <h2>
+          <span>A — Live view (headful)</span>
+          <span class="tag" id="live-session"></span>
+        </h2>
+        <div class="stage">
+          <iframe
+            id="live"
+            allow="autoplay; clipboard-read; clipboard-write"
+            referrerpolicy="no-referrer"
+          ></iframe>
+        </div>
+        <div class="stats">
+          <span>transport <b>browser_live_view_url</b></span>
+          <span>viewport <b id="live-vp">–</b></span>
+          <span>full desktop + chrome <b>yes</b></span>
+          <span>interactive <b>yes</b></span>
+        </div>
+      </section>
+
+      <section class="pane">
+        <h2>
+          <span>B — CDP <code>Page.startScreencast</code></span>
+          <span class="tag" id="cast-session"></span>
+        </h2>
+        <div class="stage"><canvas id="cast" tabindex="0"></canvas></div>
+        <div class="stats">
+          <span>fps <b id="fps">–</b></span>
+          <span>bitrate <b id="kbps">–</b></span>
+          <span>frame <b id="dim">–</b></span>
+          <span>frames <b id="count">0</b></span>
+          <span>ws <b id="ws">–</b></span>
+          <label
+            ><input type="checkbox" id="input-on" checked /> forward input</label
+          >
+          <span id="focus-hint">click the canvas to type</span>
+        </div>
+      </section>
+    </div>
+
+    <p class="note">
+      Both pages carry a magenta sweep bar and a millisecond clock. Compare the two
+      panes to read off the end-to-end lag of each transport. Screencast frames are
+      pulled straight from Kernel by this tab — the <code>cdp_ws_url</code> JWT
+      authenticates the WebSocket, so no frames pass through the local Node process.
+      Note that screencast captures the <em>page viewport only</em>, while live view
+      shows the whole desktop including browser chrome.
+    </p>
+    <p class="note">
+      Both panes are interactive. Pane A is Kernel's built-in interactive live view;
+      pane B forwards mouse and keyboard events from the canvas into the browser via
+      <code>Input.dispatchMouseEvent</code> / <code>Input.dispatchKeyEvent</code>.
+      Click the canvas first so it takes keyboard focus. Uncheck
+      <em>forward input</em> to make pane B read-only.
+    </p>
+
+    <script type="module">
+      const cfg = await (await fetch("/config")).json();
+
+      document.getElementById("url").value = cfg.targetUrl;
+      document.getElementById("live").src = cfg.liveViewUrl;
+      document.getElementById("live-session").textContent = cfg.liveSessionId;
+      document.getElementById("cast-session").textContent =
+        cfg.castSessionId + " · " + (cfg.castHeadless ? "headless" : "headful");
+      document.getElementById("live-vp").textContent = cfg.liveViewport;
+
+      const $ = (id) => document.getElementById(id);
+
+      // --- Navigate both browsers through the local control endpoint ---
+      $("go").onclick = async () => {
+        $("go").disabled = true;
+        $("status").textContent = "navigating…";
+        const res = await fetch("/navigate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: $("url").value }),
+        });
+        $("status").textContent = res.ok ? "streaming" : "navigate failed";
+        $("go").disabled = false;
+      };
+
+      // --- Raw CDP screencast, tab -> Kernel, no relay ---
+      const canvas = $("cast");
+      const ctx = canvas.getContext("2d", { alpha: false });
+
+      let frames = 0;
+      let windowFrames = 0;
+      let windowBytes = 0;
+
+      setInterval(() => {
+        $("fps").textContent = windowFrames.toFixed(0);
+        $("kbps").textContent = ((windowBytes * 8) / 1000).toFixed(0) + " kbps";
+        windowFrames = 0;
+        windowBytes = 0;
+      }, 1000);
+
+      // Set once the CDP session is live; used by the input forwarder below.
+      let castInput = null;
+      // Last frame metadata — gives the page viewport size in CSS px, which is what
+      // Input.dispatch*Event coordinates are expressed in.
+      let lastMeta = null;
+
+      function connect() {
+        const ws = new WebSocket(cfg.castCdpWsUrl);
+        let id = 0;
+        const pending = new Map();
+        const send = (method, params = {}, sessionId) => {
+          const n = ++id;
+          ws.send(JSON.stringify({ id: n, method, params, sessionId }));
+          return new Promise((resolve, reject) => pending.set(n, { resolve, reject }));
+        };
+
+        ws.onopen = async () => {
+          $("ws").textContent = "open";
+          const { targetInfos } = await send("Target.getTargets");
+          const page = targetInfos.find((t) => t.type === "page");
+          const { sessionId } = await send("Target.attachToTarget", {
+            targetId: page.targetId,
+            flatten: true,
+          });
+          await send("Page.enable", {}, sessionId);
+          // No maxWidth/maxHeight: stream at the browser's native viewport size so
+          // the comparison against live view is apples-to-apples.
+          await send("Page.startScreencast", { format: "jpeg", quality: 80, everyNthFrame: 1 }, sessionId);
+          $("status").textContent = "streaming";
+
+          // Fire-and-forget input dispatch. We deliberately don't await the CDP
+          // reply — waiting would add a round trip of latency to every mousemove.
+          castInput = (method, params) =>
+            ws.send(JSON.stringify({ id: ++id, method, params, sessionId }));
+        };
+
+        ws.onmessage = (e) => {
+          const msg = JSON.parse(e.data);
+
+          if (msg.id !== undefined) {
+            const p = pending.get(msg.id);
+            if (!p) return;
+            pending.delete(msg.id);
+            return msg.error ? p.reject(new Error(msg.error.message)) : p.resolve(msg.result);
+          }
+
+          if (msg.method !== "Page.screencastFrame") return;
+
+          // Ack immediately — Chrome throttles to one unacked frame at a time.
+          ws.send(
+            JSON.stringify({
+              id: ++id,
+              method: "Page.screencastFrameAck",
+              params: { sessionId: msg.params.sessionId },
+              sessionId: msg.sessionId,
+            }),
+          );
+
+          lastMeta = msg.params.metadata;
+          windowBytes += msg.params.data.length * 0.75; // base64 -> bytes
+          frames++;
+          windowFrames++;
+          $("count").textContent = frames;
+
+          const img = new Image();
+          img.onload = () => {
+            if (canvas.width !== img.width || canvas.height !== img.height) {
+              canvas.width = img.width;
+              canvas.height = img.height;
+              $("dim").textContent = img.width + "×" + img.height;
+            }
+            ctx.drawImage(img, 0, 0);
+          };
+          img.src = "data:image/jpeg;base64," + msg.params.data;
+        };
+
+        ws.onclose = () => {
+          castInput = null;
+          $("ws").textContent = "closed — retrying";
+          setTimeout(connect, 2000);
+        };
+        ws.onerror = () => { $("ws").textContent = "error"; };
+      }
+
+      connect();
+
+      // ----------------------------------------------------------------------
+      // Input forwarding: DOM events on the canvas -> CDP Input domain.
+      // This is what makes the screencast pane interactive like the live view.
+      // ----------------------------------------------------------------------
+
+      const enabled = () => castInput && lastMeta && $("input-on").checked;
+
+      const MOD = { alt: 1, ctrl: 2, meta: 4, shift: 8 };
+      const modifiers = (e) =>
+        (e.altKey ? MOD.alt : 0) |
+        (e.ctrlKey ? MOD.ctrl : 0) |
+        (e.metaKey ? MOD.meta : 0) |
+        (e.shiftKey ? MOD.shift : 0);
+
+      // The canvas is laid out with object-fit: contain, so the drawn image is
+      // letterboxed inside the element. Undo that to get page CSS coordinates.
+      function toPage(e) {
+        const r = canvas.getBoundingClientRect();
+        if (!r.width || !r.height || !canvas.width) return null;
+        const imgAspect = canvas.width / canvas.height;
+        const boxAspect = r.width / r.height;
+        const dw = boxAspect > imgAspect ? r.height * imgAspect : r.width;
+        const dh = boxAspect > imgAspect ? r.height : r.width / imgAspect;
+        const nx = (e.clientX - (r.left + (r.width - dw) / 2)) / dw;
+        const ny = (e.clientY - (r.top + (r.height - dh) / 2)) / dh;
+        if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
+        return { x: nx * lastMeta.deviceWidth, y: ny * lastMeta.deviceHeight };
+      }
+
+      const BUTTONS = ["left", "middle", "right", "back", "forward"];
+
+      function mouse(type, e, extra = {}) {
+        if (!enabled()) return;
+        const p = toPage(e);
+        if (!p) return;
+        castInput("Input.dispatchMouseEvent", {
+          type,
+          x: p.x,
+          y: p.y,
+          button: type === "mouseMoved" && !e.buttons ? "none" : BUTTONS[e.button] ?? "left",
+          buttons: e.buttons,
+          modifiers: modifiers(e),
+          clickCount: type === "mouseMoved" ? 0 : e.detail || 1,
+          ...extra,
+        });
+      }
+
+      // Coalesce moves to one per frame so a fast drag doesn't flood the socket.
+      let pendingMove = null;
+      requestAnimationFrame(function pump() {
+        if (pendingMove) {
+          mouse("mouseMoved", pendingMove);
+          pendingMove = null;
+        }
+        requestAnimationFrame(pump);
+      });
+
+      canvas.addEventListener("mousemove", (e) => { pendingMove = e; });
+      canvas.addEventListener("mousedown", (e) => {
+        canvas.focus();
+        e.preventDefault();
+        mouse("mousePressed", e);
+      });
+      canvas.addEventListener("mouseup", (e) => { e.preventDefault(); mouse("mouseReleased", e); });
+      canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+      canvas.addEventListener(
+        "wheel",
+        (e) => {
+          if (!enabled()) return;
+          e.preventDefault(); // don't scroll the host page
+          // CDP uses the same sign convention as the DOM wheel event: positive
+          // deltaY scrolls down. Pass through unchanged.
+          mouse("mouseWheel", e, { deltaX: e.deltaX, deltaY: e.deltaY });
+        },
+        { passive: false },
+      );
+
+      // Keyboard. keydown/keyup map to CDP directly; printable keys also need
+      // `text` set, otherwise Chrome registers the key but inserts nothing.
+      function keyText(e) {
+        if (e.ctrlKey || e.metaKey) return undefined;
+        if (e.key.length === 1) return e.key;
+        if (e.key === "Enter") return "\r";
+        if (e.key === "Tab") return "\t";
+        return undefined;
+      }
+
+      function key(type, e) {
+        if (!enabled()) return;
+        e.preventDefault();
+        const text = keyText(e);
+        castInput("Input.dispatchKeyEvent", {
+          type: type === "keyDown" ? (text ? "keyDown" : "rawKeyDown") : "keyUp",
+          key: e.key,
+          code: e.code,
+          // keyCode is deprecated but Chrome still populates it, and CDP wants
+          // the Windows virtual key code here.
+          windowsVirtualKeyCode: e.keyCode,
+          nativeVirtualKeyCode: e.keyCode,
+          text,
+          unmodifiedText: text ? text.toLowerCase() : undefined,
+          modifiers: modifiers(e),
+          autoRepeat: e.repeat,
+          location: e.location,
+          isKeypad: e.location === 3,
+        });
+      }
+
+      canvas.addEventListener("keydown", (e) => key("keyDown", e));
+      canvas.addEventListener("keyup", (e) => key("keyUp", e));
+
+      const hint = $("focus-hint");
+      canvas.addEventListener("focus", () => {
+        hint.textContent = "focused — keys forwarded";
+        canvas.style.outline = "2px solid #f0f";
+      });
+      canvas.addEventListener("blur", () => {
+        hint.textContent = "click the canvas to type";
+        canvas.style.outline = "none";
+      });
+    </script>
+  </body>
+</html>
